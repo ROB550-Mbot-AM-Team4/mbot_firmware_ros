@@ -27,10 +27,19 @@ enum drive_modes
 // Robot state structure
 typedef struct {
     int64_t timestamp_us;
+
+    bool use_gyro_odom;
+
     // Odometry
-    float odom_x;
-    float odom_y;
-    float odom_theta;
+    float wheel_odom_x;
+    float wheel_odom_y;
+    float wheel_odom_theta;
+
+    // Gyro Odometry
+    float gyro_odom_x;
+    float gyro_odom_y;
+    float gyro_odom_theta;
+
     // Body velocity
     float vx;
     float vy;

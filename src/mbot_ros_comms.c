@@ -7,6 +7,8 @@
 // Define ROS Objects (matching extern declarations in .h)
 rcl_publisher_t imu_publisher;
 rcl_publisher_t odom_publisher;
+rcl_publisher_t wheel_odom_publisher;
+rcl_publisher_t gyro_odom_publisher;
 rcl_publisher_t motor_vel_publisher;
 rcl_publisher_t tf_publisher;
 rcl_publisher_t encoders_publisher;
@@ -103,6 +105,20 @@ int mbot_ros_comms_init_publishers(rcl_node_t *node) {
         "odom");
     if (ret != RCL_RET_OK) { printf("[FATAL] Failed to init odom_publisher: %d\n", ret); fflush(stdout); return MBOT_ERROR; }
 
+    ret = rclc_publisher_init_default(
+        &wheel_odom_publisher,
+        node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
+        "wheel_odom");
+    if (ret != RCL_RET_OK) { printf("[FATAL] Failed to init odom_publisher: %d\n", ret); fflush(stdout); return MBOT_ERROR; }
+
+    ret = rclc_publisher_init_default(
+        &gyro_odom_publisher,
+        node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
+        "gyro_odom");
+    if (ret != RCL_RET_OK) { printf("[FATAL] Failed to init odom_publisher: %d\n", ret); fflush(stdout); return MBOT_ERROR; }
+
     ret = rclc_publisher_init_best_effort(
         &motor_vel_publisher,
         node,
@@ -196,9 +212,12 @@ void reset_odometry_callback(const void * req, void * res) {
 
     // Reset odometry in a thread-safe manner
     ENTER_CRITICAL();
-    mbot_state.odom_x = 0.0f;
-    mbot_state.odom_y = 0.0f;
-    mbot_state.odom_theta = 0.0f;
+    mbot_state.wheel_odom_x = 0.0f;
+    mbot_state.wheel_odom_y = 0.0f;
+    mbot_state.wheel_odom_theta = 0.0f;
+    mbot_state.gyro_odom_x = 0.0f;
+    mbot_state.gyro_odom_y = 0.0f;
+    mbot_state.gyro_odom_theta = 0.0f;
     EXIT_CRITICAL();
 
     // Set response

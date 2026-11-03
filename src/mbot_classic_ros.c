@@ -198,13 +198,12 @@ static void mbot_publish_state(void) {
     if (tick % 2 == 0) {
         ret = rcl_publish(&encoders_publisher, &encoders_msg, NULL);
         ret = rcl_publish(&tf_publisher, &tf_msg, NULL);
-    }
-
-    // Encoders & Odometry & TF - every 4th tick (25 Hz at 100 Hz timer)
-    if (tick % 4 == 0) {
+        
+    } else if (tick % 4 == 0) {
         ret = rcl_publish(&odom_publisher, &odom_msg, NULL);
+        ret = rcl_publish(&wheel_odom_publisher, &odom_msg, NULL);
+        ret = rcl_publish(&gyro_odom_publisher, &odom_msg, NULL);
     }
-
     // Battery - every 25th tick (4 Hz at 100 Hz timer)
     if (tick % 25 == 0) {
         ret = rcl_publish(&battery_publisher, &battery_msg, NULL);
@@ -231,32 +230,43 @@ static bool mbot_loop(repeating_timer_t *rt) {
             mbot_state.vy,
             mbot_state.wz,
             MAIN_LOOP_PERIOD,
-            &mbot_state.odom_x,
-            &mbot_state.odom_y,
-            &mbot_state.odom_theta
+            &mbot_state.wheel_odom_x,
+            &mbot_state.wheel_odom_y,
+            &mbot_state.wheel_odom_theta
         );
-        // mbot_calculate_gyrodometry(
-        //     mbot_state.vx,
-        //     mbot_state.vy,
-        //     mbot_state.wz,
-        //     MAIN_LOOP_PERIOD,
-        //     mbot_state.imu_gyro[2],
-        //     &mbot_state.odom_x,
-        //     &mbot_state.odom_y,
-        //     &mbot_state.odom_theta
-        // );
+        mbot_calculate_gyrodometry(
+            mbot_state.vx,
+            mbot_state.vy,
+            mbot_state.wz,
+            MAIN_LOOP_PERIOD,
+            mbot_state.imu_gyro[2],
+            &mbot_state.gyro_odom_x,
+            &mbot_state.gyro_odom_y,
+            &mbot_state.gyro_odom_theta
+        );
         /* Populate odometry and TF ROS messages with the exact timestamp of this calculation */
         int64_t stamp_ns = rmw_uros_epoch_nanos();
+
+        float ox, oy, oth = 0.0f;
+        if (mbot_state.use_gyro_odom) {
+            ox = mbot_state.gyro_odom_x;
+            oy = mbot_state.gyro_odom_y;
+            oth = mbot_state.gyro_odom_theta;
+        } else {
+            ox = mbot_state.wheel_odom_x;
+            oy = mbot_state.wheel_odom_y;
+            oth = mbot_state.wheel_odom_theta;
+        }
 
         /* Odometry message */
         odom_msg.header.stamp.sec     = stamp_ns / 1000000000LL;
         odom_msg.header.stamp.nanosec = stamp_ns % 1000000000LL;
-        odom_msg.pose.pose.position.x = mbot_state.odom_x;
-        odom_msg.pose.pose.position.y = mbot_state.odom_y;
+        odom_msg.pose.pose.position.x = ox;
+        odom_msg.pose.pose.position.y = oy;
         odom_msg.pose.pose.position.z = 0.0f;
 
-        float cy = cosf(mbot_state.odom_theta * 0.5f);
-        float sy = sinf(mbot_state.odom_theta * 0.5f);
+        float cy = cosf(oth * 0.5f);
+        float sy = sinf(oth * 0.5f);
         odom_msg.pose.pose.orientation.w = cy;
         odom_msg.pose.pose.orientation.x = 0.0f;
         odom_msg.pose.pose.orientation.y = 0.0f;
@@ -265,6 +275,8 @@ static bool mbot_loop(repeating_timer_t *rt) {
         odom_msg.twist.twist.linear.x  = mbot_state.vx;
         odom_msg.twist.twist.linear.y  = mbot_state.vy;
         odom_msg.twist.twist.angular.z = mbot_state.wz;
+
+        
 
         /* TF message (odom -> base_footprint) */
         tf_msg.transforms.data[0].header.stamp.sec     = odom_msg.header.stamp.sec;
