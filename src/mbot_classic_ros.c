@@ -199,11 +199,14 @@ static void mbot_publish_state(void) {
         ret = rcl_publish(&encoders_publisher, &encoders_msg, NULL);
         ret = rcl_publish(&tf_publisher, &tf_msg, NULL);
         
-    } else if (tick % 4 == 0) {
+    } 
+    
+    if (tick % 4 == 0) {
         ret = rcl_publish(&odom_publisher, &odom_msg, NULL);
         ret = rcl_publish(&wheel_odom_publisher, &odom_msg, NULL);
         ret = rcl_publish(&gyro_odom_publisher, &odom_msg, NULL);
     }
+    
     // Battery - every 25th tick (4 Hz at 100 Hz timer)
     if (tick % 25 == 0) {
         ret = rcl_publish(&battery_publisher, &battery_msg, NULL);
