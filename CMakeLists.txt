@@ -38,6 +38,10 @@ set(COMMON_LIBS
 #=============================================================================
 # Main MBot Classic ROS Executable
 #=============================================================================
+# Debug odometry build: also publish /wheel_odom, /gyro_odom and the
+# odom->wheel_odom, odom->gyro_odom tf frames. Enable with: cmake -DMBOT_DEBUG_ODOM=ON ..
+option(MBOT_DEBUG_ODOM "Publish debug odometry topics and tf frames" OFF)
+
 add_executable(mbot_classic_ros
     src/mbot_classic_ros.c
     src/mbot_classic_ros.h
@@ -74,6 +78,10 @@ target_compile_definitions(mbot_classic_ros PRIVATE
     # PICO_STDIO_DEFAULT_CRLF=0
     CFG_TUD_CDC=2
 )
+if(MBOT_DEBUG_ODOM)
+    target_compile_definitions(mbot_classic_ros PRIVATE MBOT_DEBUG_ODOM=1)
+    message(STATUS "mbot_classic_ros: MBOT_DEBUG_ODOM enabled")
+endif()
 
 #=============================================================================
 # Test Programs

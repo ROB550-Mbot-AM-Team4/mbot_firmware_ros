@@ -203,14 +203,46 @@ static void mbot_publish_state(void) {
     
     if (tick % 4 == 0) {
         ret = rcl_publish(&odom_publisher, &odom_msg, NULL);
-        ret = rcl_publish(&wheel_odom_publisher, &odom_msg, NULL);
-        ret = rcl_publish(&gyro_odom_publisher, &odom_msg, NULL);
+#if MBOT_DEBUG_ODOM
+        ret = rcl_publish(&wheel_odom_publisher, &wheel_odom_msg, NULL);
+        ret = rcl_publish(&gyro_odom_publisher, &gyro_odom_msg, NULL);
+#endif
     }
     
     // Battery - every 25th tick (4 Hz at 100 Hz timer)
     if (tick % 25 == 0) {
         ret = rcl_publish(&battery_publisher, &battery_msg, NULL);
     }
+}
+
+// Fill a planar nav_msgs/Odometry from (x, y, theta) and body velocities
+static inline void fill_odom_msg(nav_msgs__msg__Odometry* m, int64_t stamp_ns,
+                                 float x, float y, float theta,
+                                 float vx, float vy, float wz) {
+    m->header.stamp.sec     = stamp_ns / 1000000000LL;
+    m->header.stamp.nanosec = stamp_ns % 1000000000LL;
+    m->pose.pose.position.x = x;
+    m->pose.pose.position.y = y;
+    m->pose.pose.position.z = 0.0f;
+    m->pose.pose.orientation.w = cosf(theta * 0.5f);
+    m->pose.pose.orientation.x = 0.0f;
+    m->pose.pose.orientation.y = 0.0f;
+    m->pose.pose.orientation.z = sinf(theta * 0.5f);
+    m->twist.twist.linear.x  = vx;
+    m->twist.twist.linear.y  = vy;
+    m->twist.twist.angular.z = wz;
+}
+
+// Mirror an odometry message into a TransformStamped (frame_id -> child_frame_id)
+static inline void odom_to_tf(geometry_msgs__msg__TransformStamped* t,
+                              const nav_msgs__msg__Odometry* m) {
+    t->header.stamp     = m->header.stamp;
+    t->header.frame_id  = m->header.frame_id;   // shallow copy of the static string buffer
+    t->child_frame_id   = m->child_frame_id;
+    t->transform.translation.x = m->pose.pose.position.x;
+    t->transform.translation.y = m->pose.pose.position.y;
+    t->transform.translation.z = m->pose.pose.position.z;
+    t->transform.rotation      = m->pose.pose.orientation;
 }
 
 // Main robot logic loop, runs at MAIN_LOOP_HZ (called by hardware timer)
@@ -250,7 +282,8 @@ static bool mbot_loop(repeating_timer_t *rt) {
         /* Populate odometry and TF ROS messages with the exact timestamp of this calculation */
         int64_t stamp_ns = rmw_uros_epoch_nanos();
 
-        float ox, oy, oth = 0.0f;
+        /* Selected odometry -> /odom and odom->base_footprint */
+        float ox, oy, oth;
         if (mbot_state.use_gyro_odom) {
             ox = mbot_state.gyro_odom_x;
             oy = mbot_state.gyro_odom_y;
@@ -260,37 +293,22 @@ static bool mbot_loop(repeating_timer_t *rt) {
             oy = mbot_state.wheel_odom_y;
             oth = mbot_state.wheel_odom_theta;
         }
+        fill_odom_msg(&odom_msg, stamp_ns, ox, oy, oth,
+                      mbot_state.vx, mbot_state.vy, mbot_state.wz);
 
-        /* Odometry message */
-        odom_msg.header.stamp.sec     = stamp_ns / 1000000000LL;
-        odom_msg.header.stamp.nanosec = stamp_ns % 1000000000LL;
-        odom_msg.pose.pose.position.x = ox;
-        odom_msg.pose.pose.position.y = oy;
-        odom_msg.pose.pose.position.z = 0.0f;
+#if MBOT_DEBUG_ODOM
+        /* Debug odometry: both estimates with the same stamp */
+        fill_odom_msg(&wheel_odom_msg, stamp_ns,
+                      mbot_state.wheel_odom_x, mbot_state.wheel_odom_y, mbot_state.wheel_odom_theta,
+                      mbot_state.vx, mbot_state.vy, mbot_state.wz);
+        fill_odom_msg(&gyro_odom_msg, stamp_ns,
+                      mbot_state.gyro_odom_x, mbot_state.gyro_odom_y, mbot_state.gyro_odom_theta,
+                      mbot_state.vx, mbot_state.vy, mbot_state.imu_gyro[2]);
+#endif
 
-        float cy = cosf(oth * 0.5f);
-        float sy = sinf(oth * 0.5f);
-        odom_msg.pose.pose.orientation.w = cy;
-        odom_msg.pose.pose.orientation.x = 0.0f;
-        odom_msg.pose.pose.orientation.y = 0.0f;
-        odom_msg.pose.pose.orientation.z = sy;
-
-        odom_msg.twist.twist.linear.x  = mbot_state.vx;
-        odom_msg.twist.twist.linear.y  = mbot_state.vy;
-        odom_msg.twist.twist.angular.z = mbot_state.wz;
-
-        
-
-        /* TF message (odom -> base_footprint) */
-        tf_msg.transforms.data[0].header.stamp.sec     = odom_msg.header.stamp.sec;
-        tf_msg.transforms.data[0].header.stamp.nanosec = odom_msg.header.stamp.nanosec;
-        tf_msg.transforms.data[0].header.frame_id      = odom_msg.header.frame_id;
-        tf_msg.transforms.data[0].child_frame_id       = odom_msg.child_frame_id;
-        tf_msg.transforms.data[0].transform.translation.x = odom_msg.pose.pose.position.x;
-        tf_msg.transforms.data[0].transform.translation.y = odom_msg.pose.pose.position.y;
-        tf_msg.transforms.data[0].transform.translation.z = odom_msg.pose.pose.position.z;
-        tf_msg.transforms.data[0].transform.rotation      = odom_msg.pose.pose.orientation;
-        tf_msg.transforms.size = 1;
+        /* TF message: odom->base_footprint only (debug odometry is topic-only) */
+        odom_to_tf(&tf_msg.transforms.data[0], &odom_msg);
+        tf_msg.transforms.size = NUM_TF_TRANSFORMS;
 
         /* Local timestamp (for non-ROS diagnostics) */
         mbot_state.timestamp_us = time_us_64();
@@ -441,6 +459,11 @@ int main() {
 
     mbot_read_fram(0, sizeof(params), (uint8_t*)&params);
     mbot_read_pid_gains(&params);
+    // use_gyro_odom was appended to mbot_params_t; older FRAM images hold garbage here.
+    if (params.use_gyro_odom != 0 && params.use_gyro_odom != 1) {
+        params.use_gyro_odom = 0;
+    }
+    mbot_state.use_gyro_odom = (params.use_gyro_odom == 1);
     mbot_controller_init();
 
     printf("\nCalibration Parameters:\n");
@@ -675,6 +698,7 @@ static void print_mbot_params(const mbot_params_t* params) {
     else if(params->control_mode == 2) mode_str = "FF + PID";
 
     printf("\nControl Mode: %d (%s)\n", params->control_mode, mode_str);
+    printf("Use Gyro Odom: %d\n", params->use_gyro_odom);
 }
 
 static void get_mbot_state_safe(mbot_state_t* dest) {

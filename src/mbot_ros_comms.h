@@ -15,14 +15,22 @@
 #include <mbot_interfaces/msg/battery_adc.h>
 #include <std_srvs/srv/trigger.h>
 #include <std_srvs/srv/set_bool.h>
+#include "config/mbot_classic_config.h"   // MBOT_DEBUG_ODOM
+
+// Number of transforms carried in the /tf message: odom->base_footprint only.
+// Debug odometry goes out as /wheel_odom and /gyro_odom topics, not as tf frames,
+// to keep the reliable /tf message small (each reliable publish blocks on the agent ack).
+#define NUM_TF_TRANSFORMS 1
 
 // Extern declarations for ROS objects
 
 // Publishers
 extern rcl_publisher_t imu_publisher;
 extern rcl_publisher_t odom_publisher;
+#if MBOT_DEBUG_ODOM
 extern rcl_publisher_t wheel_odom_publisher;
 extern rcl_publisher_t gyro_odom_publisher;
+#endif
 extern rcl_publisher_t motor_vel_publisher;
 extern rcl_publisher_t tf_publisher;
 extern rcl_publisher_t encoders_publisher;
@@ -31,8 +39,10 @@ extern rcl_publisher_t battery_publisher;
 // Published Messages
 extern sensor_msgs__msg__Imu imu_msg;
 extern nav_msgs__msg__Odometry odom_msg;
+#if MBOT_DEBUG_ODOM
 extern nav_msgs__msg__Odometry wheel_odom_msg;
 extern nav_msgs__msg__Odometry gyro_odom_msg;
+#endif
 extern mbot_interfaces__msg__MotorVelocity motor_vel_msg;
 extern tf2_msgs__msg__TFMessage tf_msg;
 extern mbot_interfaces__msg__Encoders encoders_msg;
