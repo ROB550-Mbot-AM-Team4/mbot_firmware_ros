@@ -28,7 +28,7 @@ enum drive_modes
 typedef struct {
     int64_t timestamp_us;
 
-    bool use_gyro_odom;   // which estimate drives /odom and odom->base_footprint
+    bool use_gyro_odom;
 
     // Odometry
     float wheel_odom_x;

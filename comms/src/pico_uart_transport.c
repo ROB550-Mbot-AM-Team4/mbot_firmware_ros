@@ -35,24 +35,23 @@ size_t pico_serial_transport_write(struct uxrCustomTransport * transport, uint8_
 size_t pico_serial_transport_read(struct uxrCustomTransport * transport, uint8_t *buf, size_t len, int timeout, uint8_t *errcode)
 {
     uint64_t start_time_us = time_us_64();
-
-    // Wait until at least one byte is available. The XRCE stream-framing layer
-    // consumes partial reads (it runs a byte-wise state machine), so returning
-    // fewer than `len` bytes is fine and avoids stalling on the full request.
-    // Polling at 100 us keeps the reliable-publish ack wait close to the USB
-    // round trip instead of quantizing it to 1 ms steps.
-    int available;
-    while ((available = dual_cdc_available(1)) <= 0) {
+    
+    // Wait for data to be available
+    while (dual_cdc_available(1) < len) {
         dual_cdc_task();
-        int64_t remaining_us = (int64_t)timeout * 1000 - (int64_t)(time_us_64() - start_time_us);
-        if (remaining_us < 0) {
+        // Check for timeout
+        int64_t elapsed_time_us = timeout * 1000 - (time_us_64() - start_time_us);
+        if (elapsed_time_us < 0) {
             *errcode = 1;
+            // printf("MicroROS read timeout\r\n");
             return 0;
         }
-        sleep_us(100);
+        
+        // Short sleep to prevent tight loop
+        sleep_us(1000);
     }
-
-    size_t to_read = ((size_t)available < len) ? (size_t)available : len;
-    int rc = dual_cdc_read_chars(1, (char*)buf, (int)to_read);
+    
+    // Read using our thread-safe function
+    int rc = dual_cdc_read_chars(1, (char*)buf, len);
     return (rc > 0) ? (size_t)rc : 0;
 }

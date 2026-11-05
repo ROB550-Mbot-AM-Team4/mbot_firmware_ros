@@ -9,7 +9,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <mbot/fram/fram.h>
-#include "mbot_classic_ros.h"   // mbot_state, ENTER_CRITICAL/EXIT_CRITICAL
 
 // Access to global params struct defined in mbot_classic_ros.c
 extern mbot_params_t params;
@@ -86,7 +85,7 @@ int init_parameter_server(rclc_parameter_server_t* parameter_server, rcl_node_t*
     // Initialize parameter server with options for low memory mode
     rclc_parameter_options_t options = {
         .notify_changed_over_dds = false,
-        .max_params = 10,
+        .max_params = 9,  
         .allow_undeclared_parameters = false,
         .low_mem_mode = false
     };
@@ -119,9 +118,6 @@ int init_parameter_server(rclc_parameter_server_t* parameter_server, rcl_node_t*
     ret = rclc_add_parameter(parameter_server, "control_mode", RCLC_PARAMETER_INT);
     if (ret != RCL_RET_OK) return MBOT_ERROR;
 
-    ret = rclc_add_parameter(parameter_server, "use_gyro_odom", RCLC_PARAMETER_BOOL);
-    if (ret != RCL_RET_OK) return MBOT_ERROR;
-
     // Set initial values for all PID gains from pid_gains
     ret = rclc_parameter_set_double(parameter_server, "left_wheel.kp", pid_gains.left_wheel.kp);
     if (ret != RCL_RET_OK) return MBOT_ERROR;
@@ -142,9 +138,6 @@ int init_parameter_server(rclc_parameter_server_t* parameter_server, rcl_node_t*
     if (ret != RCL_RET_OK) return MBOT_ERROR;
     
     ret = rclc_parameter_set_int(parameter_server, "control_mode", control_mode);
-    if (ret != RCL_RET_OK) return MBOT_ERROR;
-
-    ret = rclc_parameter_set_bool(parameter_server, "use_gyro_odom", params.use_gyro_odom == 1);
     if (ret != RCL_RET_OK) return MBOT_ERROR;
     
     return MBOT_OK;
@@ -227,16 +220,6 @@ bool parameter_callback(const Parameter * old_param, const Parameter * new_param
             int val = new_param->value.integer_value;
             control_mode = (control_mode_t)val;
             pid_updated = true;
-        }
-    } else if (strcmp(param_name, "use_gyro_odom") == 0) {
-        if (new_param->value.type == RCLC_PARAMETER_BOOL) {
-            bool use_gyro = new_param->value.bool_value;
-            params.use_gyro_odom = use_gyro ? 1 : 0;
-            ENTER_CRITICAL();
-            mbot_state.use_gyro_odom = use_gyro;   // read by mbot_loop (timer IRQ)
-            EXIT_CRITICAL();
-            printf("[INFO] use_gyro_odom = %d\n", params.use_gyro_odom);
-            pid_updated = true;   // persist to FRAM
         }
     }
 

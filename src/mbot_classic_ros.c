@@ -204,8 +204,7 @@ static void mbot_publish_state(void) {
     if (tick % 4 == 0) {
         ret = rcl_publish(&odom_publisher, &odom_msg, NULL);
 #if MBOT_DEBUG_ODOM
-        ret = rcl_publish(&wheel_odom_publisher, &wheel_odom_msg, NULL);
-        ret = rcl_publish(&gyro_odom_publisher, &gyro_odom_msg, NULL);
+        ret = rcl_publish(&alt_odom_publisher, &alt_odom_msg, NULL);
 #endif
     }
     
@@ -233,18 +232,6 @@ static inline void fill_odom_msg(nav_msgs__msg__Odometry* m, int64_t stamp_ns,
     m->twist.twist.angular.z = wz;
 }
 
-// Mirror an odometry message into a TransformStamped (frame_id -> child_frame_id)
-static inline void odom_to_tf(geometry_msgs__msg__TransformStamped* t,
-                              const nav_msgs__msg__Odometry* m) {
-    t->header.stamp     = m->header.stamp;
-    t->header.frame_id  = m->header.frame_id;   // shallow copy of the static string buffer
-    t->child_frame_id   = m->child_frame_id;
-    t->transform.translation.x = m->pose.pose.position.x;
-    t->transform.translation.y = m->pose.pose.position.y;
-    t->transform.translation.z = m->pose.pose.position.z;
-    t->transform.rotation      = m->pose.pose.orientation;
-}
-
 // Main robot logic loop, runs at MAIN_LOOP_HZ (called by hardware timer)
 static bool mbot_loop(repeating_timer_t *rt) {
     {   // Critical section for sensor and state update
@@ -260,11 +247,14 @@ static bool mbot_loop(repeating_timer_t *rt) {
             &mbot_state.vy,
             &mbot_state.wz
         );
+        /* Integrate with the measured loop period, not the nominal one: the loop runs
+           ~10.5 ms (longer under load), so a fixed 10 ms under-counts distance and heading. */
+        float odom_dt = (float)mbot_state.encoder_delta_t * 1e-6f;
         mbot_calculate_odometry(
             mbot_state.vx,
             mbot_state.vy,
             mbot_state.wz,
-            MAIN_LOOP_PERIOD,
+            odom_dt,
             &mbot_state.wheel_odom_x,
             &mbot_state.wheel_odom_y,
             &mbot_state.wheel_odom_theta
@@ -273,7 +263,7 @@ static bool mbot_loop(repeating_timer_t *rt) {
             mbot_state.vx,
             mbot_state.vy,
             mbot_state.wz,
-            MAIN_LOOP_PERIOD,
+            odom_dt,
             mbot_state.imu_gyro[2],
             &mbot_state.gyro_odom_x,
             &mbot_state.gyro_odom_y,
@@ -282,33 +272,39 @@ static bool mbot_loop(repeating_timer_t *rt) {
         /* Populate odometry and TF ROS messages with the exact timestamp of this calculation */
         int64_t stamp_ns = rmw_uros_epoch_nanos();
 
-        /* Selected odometry -> /odom and odom->base_footprint */
-        float ox, oy, oth;
+        /* Selected odometry -> /odom (and odom->base_footprint tf); the other -> comparison topic */
         if (mbot_state.use_gyro_odom) {
-            ox = mbot_state.gyro_odom_x;
-            oy = mbot_state.gyro_odom_y;
-            oth = mbot_state.gyro_odom_theta;
-        } else {
-            ox = mbot_state.wheel_odom_x;
-            oy = mbot_state.wheel_odom_y;
-            oth = mbot_state.wheel_odom_theta;
-        }
-        fill_odom_msg(&odom_msg, stamp_ns, ox, oy, oth,
-                      mbot_state.vx, mbot_state.vy, mbot_state.wz);
-
+            fill_odom_msg(&odom_msg, stamp_ns,
+                          mbot_state.gyro_odom_x, mbot_state.gyro_odom_y, mbot_state.gyro_odom_theta,
+                          mbot_state.vx, mbot_state.vy, mbot_state.imu_gyro[2]);
 #if MBOT_DEBUG_ODOM
-        /* Debug odometry: both estimates with the same stamp */
-        fill_odom_msg(&wheel_odom_msg, stamp_ns,
-                      mbot_state.wheel_odom_x, mbot_state.wheel_odom_y, mbot_state.wheel_odom_theta,
-                      mbot_state.vx, mbot_state.vy, mbot_state.wz);
-        fill_odom_msg(&gyro_odom_msg, stamp_ns,
-                      mbot_state.gyro_odom_x, mbot_state.gyro_odom_y, mbot_state.gyro_odom_theta,
-                      mbot_state.vx, mbot_state.vy, mbot_state.imu_gyro[2]);
+            fill_odom_msg(&alt_odom_msg, stamp_ns,
+                          mbot_state.wheel_odom_x, mbot_state.wheel_odom_y, mbot_state.wheel_odom_theta,
+                          mbot_state.vx, mbot_state.vy, mbot_state.wz);
 #endif
+        } else {
+            fill_odom_msg(&odom_msg, stamp_ns,
+                          mbot_state.wheel_odom_x, mbot_state.wheel_odom_y, mbot_state.wheel_odom_theta,
+                          mbot_state.vx, mbot_state.vy, mbot_state.wz);
+#if MBOT_DEBUG_ODOM
+            fill_odom_msg(&alt_odom_msg, stamp_ns,
+                          mbot_state.gyro_odom_x, mbot_state.gyro_odom_y, mbot_state.gyro_odom_theta,
+                          mbot_state.vx, mbot_state.vy, mbot_state.imu_gyro[2]);
+#endif
+        }
 
-        /* TF message: odom->base_footprint only (debug odometry is topic-only) */
-        odom_to_tf(&tf_msg.transforms.data[0], &odom_msg);
-        tf_msg.transforms.size = NUM_TF_TRANSFORMS;
+        
+
+        /* TF message (odom -> base_footprint) */
+        tf_msg.transforms.data[0].header.stamp.sec     = odom_msg.header.stamp.sec;
+        tf_msg.transforms.data[0].header.stamp.nanosec = odom_msg.header.stamp.nanosec;
+        tf_msg.transforms.data[0].header.frame_id      = odom_msg.header.frame_id;
+        tf_msg.transforms.data[0].child_frame_id       = odom_msg.child_frame_id;
+        tf_msg.transforms.data[0].transform.translation.x = odom_msg.pose.pose.position.x;
+        tf_msg.transforms.data[0].transform.translation.y = odom_msg.pose.pose.position.y;
+        tf_msg.transforms.data[0].transform.translation.z = odom_msg.pose.pose.position.z;
+        tf_msg.transforms.data[0].transform.rotation      = odom_msg.pose.pose.orientation;
+        tf_msg.transforms.size = 1;
 
         /* Local timestamp (for non-ROS diagnostics) */
         mbot_state.timestamp_us = time_us_64();
@@ -459,11 +455,8 @@ int main() {
 
     mbot_read_fram(0, sizeof(params), (uint8_t*)&params);
     mbot_read_pid_gains(&params);
-    // use_gyro_odom was appended to mbot_params_t; older FRAM images hold garbage here.
-    if (params.use_gyro_odom != 0 && params.use_gyro_odom != 1) {
-        params.use_gyro_odom = 0;
-    }
-    mbot_state.use_gyro_odom = (params.use_gyro_odom == 1);
+    mbot_state.use_gyro_odom = (MBOT_USE_GYRO_ODOM != 0);   // build-time selection
+    printf("Odometry source: %s\n", mbot_state.use_gyro_odom ? "gyrodometry" : "wheel odometry");
     mbot_controller_init();
 
     printf("\nCalibration Parameters:\n");
@@ -477,7 +470,9 @@ int main() {
 
     printf("\nStarting MBot Loop...\n");
     mbot_state.last_encoder_time = time_us_64(); 
-    if (!add_repeating_timer_ms((int32_t)(MAIN_LOOP_PERIOD * 1000.0f), mbot_loop, NULL, &mbot_loop_timer)){
+    // Negative delay = fixed period between callback starts (positive would add the
+    // callback's own duration to every period and run the loop below MAIN_LOOP_HZ).
+    if (!add_repeating_timer_us(-(int64_t)(MAIN_LOOP_PERIOD * 1000000.0f), mbot_loop, NULL, &mbot_loop_timer)){
         printf("Failed to add control loop timer! Halting.\r\n");
         while(1) {tight_loop_contents();}
     }
@@ -698,7 +693,6 @@ static void print_mbot_params(const mbot_params_t* params) {
     else if(params->control_mode == 2) mode_str = "FF + PID";
 
     printf("\nControl Mode: %d (%s)\n", params->control_mode, mode_str);
-    printf("Use Gyro Odom: %d\n", params->use_gyro_odom);
 }
 
 static void get_mbot_state_safe(mbot_state_t* dest) {

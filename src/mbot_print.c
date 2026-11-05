@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "mbot_print.h"
+#include "mbot_odometry.h"
 
 void generateTableInt(char* buf, int rows, int cols, const char* title, const char* headings[], int data[rows][cols]) {
     char line[256] = {0};
@@ -107,4 +108,6 @@ void mbot_print_state(const mbot_state_t* state) {
 
     generateBottomLine(buf, 3);
     printf("\r%s\n", buf);
+    printf("\r GYRO BIAS: %+.5f rad/s (%s)\n", mbot_gyrodometry_get_bias(),
+           mbot_gyrodometry_bias_ready() ? "ready" : "estimating, keep robot still");
 } 

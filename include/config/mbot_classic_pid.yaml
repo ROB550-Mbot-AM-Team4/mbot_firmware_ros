@@ -14,5 +14,3 @@ mbot_control_node:
     right_wheel.tf: 0.275
 
     control_mode: 2  # 0=FF only, 1=PID only, 2=FF+PID
-
-    use_gyro_odom: false  # false: /odom + tf from wheel odometry, true: from gyrodometry

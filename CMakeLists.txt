@@ -38,9 +38,10 @@ set(COMMON_LIBS
 #=============================================================================
 # Main MBot Classic ROS Executable
 #=============================================================================
-# Debug odometry build: also publish /wheel_odom, /gyro_odom and the
-# odom->wheel_odom, odom->gyro_odom tf frames. Enable with: cmake -DMBOT_DEBUG_ODOM=ON ..
-option(MBOT_DEBUG_ODOM "Publish debug odometry topics and tf frames" OFF)
+# Odometry source: OFF = wheel odometry, ON = gyrodometry. See include/config/mbot_classic_config.h
+option(MBOT_USE_GYRO_ODOM "Use gyrodometry (encoders + gyro) for /odom and tf" OFF)
+# Debug odometry: also publish the non-selected estimate (/wheel_odom or /gyro_odom) for comparison
+option(MBOT_DEBUG_ODOM "Publish the non-selected odometry topic for comparison" OFF)
 
 add_executable(mbot_classic_ros
     src/mbot_classic_ros.c
@@ -78,9 +79,13 @@ target_compile_definitions(mbot_classic_ros PRIVATE
     # PICO_STDIO_DEFAULT_CRLF=0
     CFG_TUD_CDC=2
 )
+if(MBOT_USE_GYRO_ODOM)
+    target_compile_definitions(mbot_classic_ros PRIVATE MBOT_USE_GYRO_ODOM=1)
+    message(STATUS "mbot_classic_ros: MBOT_USE_GYRO_ODOM enabled (gyrodometry)")
+endif()
 if(MBOT_DEBUG_ODOM)
     target_compile_definitions(mbot_classic_ros PRIVATE MBOT_DEBUG_ODOM=1)
-    message(STATUS "mbot_classic_ros: MBOT_DEBUG_ODOM enabled")
+    message(STATUS "mbot_classic_ros: MBOT_DEBUG_ODOM enabled (comparison odom topic)")
 endif()
 
 #=============================================================================
