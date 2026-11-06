@@ -20,9 +20,10 @@ def main():
             time.sleep(0.05)
 
     print("Starting sequence...")
+    move(0.0, 0.0, 0.0)
     
     # 1. Drive forward 0.5 m/s for 4s
-    move(0.5, 0.0, 4.0)
+    move(0.3, 0.0, 4.0)
     
     # 2. Wait 1s
     move(0.0, 0.0, 1.0)

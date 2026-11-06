@@ -65,24 +65,28 @@ def find_segments(t, u, min_len=1.0, thr=0.02):
 
 
 def step_metrics(tm, ym, t_on, t_off, target, band=0.05, ss_window=1.5):
+    """Rise/overshoot/settling are relative to the measured steady-state value (standard
+    definition); ss_err is relative to the commanded target."""
     m = (tm >= t_on) & (tm <= t_off)
     t, y = tm[m] - t_on, ym[m]
     if len(t) < 5:
         return None
     s = np.sign(target); ya = y * s; tg = abs(target)
+    ss = ya[t >= (t[-1] - ss_window)]
+    fin = float(ss.mean())                      # measured final value
+    ref = fin if fin > 0.2 * tg else tg         # fall back to target if the robot barely moved
     def first_time(cond):
         idx = np.nonzero(cond)[0]
         return float(t[idx[0]]) if len(idx) else math.nan
-    t10 = first_time(ya >= 0.1 * tg)
-    t90 = first_time(ya >= 0.9 * tg)
+    t10 = first_time(ya >= 0.1 * ref)
+    t90 = first_time(ya >= 0.9 * ref)
     peak = float(ya.max())
-    overshoot = max(0.0, (peak - tg) / tg * 100.0)
-    inside = np.abs(ya - tg) <= band * tg
+    overshoot = max(0.0, (peak - ref) / ref * 100.0)
+    inside = np.abs(ya - ref) <= band * ref
     settle = math.nan
     for i in range(len(t)):
         if inside[i:].all():
             settle = float(t[i]); break
-    ss = ya[t >= (t[-1] - ss_window)]
     return {
         "target": target,
         "rise_10_90_s": t90 - t10 if not (math.isnan(t10) or math.isnan(t90)) else math.nan,
@@ -90,10 +94,10 @@ def step_metrics(tm, ym, t_on, t_off, target, band=0.05, ss_window=1.5):
         "overshoot_pct": overshoot,
         "peak": peak * s,
         f"settle_{int(band*100)}pct_s": settle,
-        "ss_mean": float(ss.mean()) * s,
+        "ss_mean": fin * s,
         "ss_std": float(ss.std()),
-        "ss_err": float(ss.mean()) * s - target,
-        "ss_err_pct": (float(ss.mean()) - tg) / tg * 100.0,
+        "ss_err": fin * s - target,
+        "ss_err_pct": (fin - tg) / tg * 100.0,
         "rms_err_hold": float(np.sqrt(np.mean((ya - tg) ** 2))),
         "n_samples": int(len(t)),
     }

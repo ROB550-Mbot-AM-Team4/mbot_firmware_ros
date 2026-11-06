@@ -214,7 +214,7 @@ static void mbot_publish_state(void) {
     }
 }
 
-// Fill a planar nav_msgs/Odometry from (x, y, theta) and body velocities
+// Fill a planar Odometry message
 static inline void fill_odom_msg(nav_msgs__msg__Odometry* m, int64_t stamp_ns,
                                  float x, float y, float theta,
                                  float vx, float vy, float wz) {
@@ -247,8 +247,7 @@ static bool mbot_loop(repeating_timer_t *rt) {
             &mbot_state.vy,
             &mbot_state.wz
         );
-        /* Integrate with the measured loop period, not the nominal one: the loop runs
-           ~10.5 ms (longer under load), so a fixed 10 ms under-counts distance and heading. */
+        /* integrate with measured dt; a fixed 10 ms under-counts */
         float odom_dt = (float)mbot_state.encoder_delta_t * 1e-6f;
         mbot_calculate_odometry(
             mbot_state.vx,
@@ -272,7 +271,7 @@ static bool mbot_loop(repeating_timer_t *rt) {
         /* Populate odometry and TF ROS messages with the exact timestamp of this calculation */
         int64_t stamp_ns = rmw_uros_epoch_nanos();
 
-        /* Selected odometry -> /odom (and odom->base_footprint tf); the other -> comparison topic */
+        /* selected source -> /odom + tf, other -> comparison topic */
         if (mbot_state.use_gyro_odom) {
             fill_odom_msg(&odom_msg, stamp_ns,
                           mbot_state.gyro_odom_x, mbot_state.gyro_odom_y, mbot_state.gyro_odom_theta,
@@ -470,8 +469,7 @@ int main() {
 
     printf("\nStarting MBot Loop...\n");
     mbot_state.last_encoder_time = time_us_64(); 
-    // Negative delay = fixed period between callback starts (positive would add the
-    // callback's own duration to every period and run the loop below MAIN_LOOP_HZ).
+    // negative delay = fixed period (positive adds callback time to each period)
     if (!add_repeating_timer_us(-(int64_t)(MAIN_LOOP_PERIOD * 1000000.0f), mbot_loop, NULL, &mbot_loop_timer)){
         printf("Failed to add control loop timer! Halting.\r\n");
         while(1) {tight_loop_contents();}

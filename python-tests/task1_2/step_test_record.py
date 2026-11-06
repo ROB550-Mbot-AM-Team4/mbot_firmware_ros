@@ -31,6 +31,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import Twist, TwistStamped
 from mbot_interfaces.msg import MotorVelocity
 
@@ -56,7 +57,7 @@ class StepTestNode(Node):
         self.cmd_st_pub = self.create_publisher(TwistStamped, "/step_test/cmd", 10)
         self.cmd_wheel_pub = self.create_publisher(MotorVelocity, "/step_test/cmd_wheel", 10)
         self.meas_pub = self.create_publisher(TwistStamped, "/step_test/meas", 50)
-        self.create_subscription(MotorVelocity, "/motor_vel", self._motor_vel_cb, 50)
+        self.create_subscription(MotorVelocity, "/motor_vel", self._motor_vel_cb, qos_profile_sensor_data)
         self.vx = 0.0
         self.wz = 0.0
         self.create_timer(0.02, self._tick)  # 50 Hz command stream (firmware times out after 1 s)

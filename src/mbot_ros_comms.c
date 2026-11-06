@@ -90,7 +90,7 @@ int mbot_ros_comms_init_messages(rcl_allocator_t* allocator) {
     odom_msg.child_frame_id.size = strlen(odom_msg.child_frame_id.data);
 
 #if MBOT_DEBUG_ODOM
-    // Alternate (non-selected) odometry: same "odom" frame, child frame named after its source
+    // comparison odometry: frame odom, child = topic name
     alt_odom_msg.header.frame_id = odom_msg.header.frame_id;   // shares the "odom" buffer
     alt_odom_msg.child_frame_id.data = alt_odom_child_frame_id_buf;
     alt_odom_msg.child_frame_id.capacity = FRAME_ID_CAPACITY;
@@ -125,8 +125,7 @@ int mbot_ros_comms_init_publishers(rcl_node_t *node) {
     if (ret != RCL_RET_OK) { printf("[FATAL] Failed to init odom_publisher: %d\n", ret); fflush(stdout); return MBOT_ERROR; }
 
 #if MBOT_DEBUG_ODOM
-    // Comparison topic (/wheel_odom when gyrodometry is selected, /gyro_odom otherwise).
-    // Best-effort: no per-publish ack wait. Needs transport MTU >= Odometry size (1024 >= 724).
+    // best-effort avoids the ack wait; needs MTU >= 724 B
     ret = rclc_publisher_init_best_effort(
         &alt_odom_publisher,
         node,

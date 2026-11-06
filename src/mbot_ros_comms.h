@@ -22,7 +22,7 @@
 extern rcl_publisher_t imu_publisher;
 extern rcl_publisher_t odom_publisher;
 #if MBOT_DEBUG_ODOM
-extern rcl_publisher_t alt_odom_publisher;   // the non-selected odometry source, for comparison
+extern rcl_publisher_t alt_odom_publisher;   // non-selected odometry
 #endif
 extern rcl_publisher_t motor_vel_publisher;
 extern rcl_publisher_t tf_publisher;

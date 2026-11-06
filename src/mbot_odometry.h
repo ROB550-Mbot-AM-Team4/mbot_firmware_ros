@@ -7,21 +7,27 @@
 extern "C" {
 #endif
 
-/* Gyrodometry tuning (heading = integrated, bias-corrected gyro z) */
+/* gyrodometry tuning */
 #ifndef GYRO_BIAS_INIT_SAMPLES
-#define GYRO_BIAS_INIT_SAMPLES 200      // stationary samples averaged for the initial bias (2 s at 100 Hz)
+#define GYRO_BIAS_INIT_SAMPLES 200      // samples for the initial bias (2 s)
 #endif
 #ifndef GYRO_BIAS_ALPHA
-#define GYRO_BIAS_ALPHA 0.01f           // low-pass gain for bias tracking while stopped (~1 s time constant)
+#define GYRO_BIAS_ALPHA 0.01f           // bias tracking gain (~1 s)
 #endif
 #ifndef GYRO_STATIONARY_VX
-#define GYRO_STATIONARY_VX 0.005f       // |vx| below this [m/s] counts as wheels stopped
+#define GYRO_STATIONARY_VX 0.005f       // stopped if |vx| below [m/s]
 #endif
 #ifndef GYRO_STATIONARY_WZ
-#define GYRO_STATIONARY_WZ 0.02f        // |wz| below this [rad/s] counts as wheels stopped
+#define GYRO_STATIONARY_WZ 0.02f        // stopped if |wz| below [rad/s]
 #endif
 #ifndef GYRO_STILL_RATE
-#define GYRO_STILL_RATE 0.01f           // corrected gyro rate below this while stopped is treated as 0 [rad/s]
+#define GYRO_STILL_RATE 0.01f           // rate held at 0 when at rest [rad/s]
+#endif
+#ifndef GYRO_BIAS_SETTLE_STEPS
+#define GYRO_BIAS_SETTLE_STEPS 200      // stopped steps before bias tracking (2 s)
+#endif
+#ifndef GYRO_BIAS_MAX_RATE
+#define GYRO_BIAS_MAX_RATE 0.05f        // max |gyro - bias| for bias tracking [rad/s]
 #endif
 
 
@@ -39,11 +45,7 @@ extern "C" {
 void mbot_calculate_odometry(float vx, float vy, float wz, float dt, float* x, float* y, float* theta);
 
 /**
- * @brief Calculate gyrodometry: translation from encoder body velocities,
- *        heading from integrating the bias-corrected IMU gyro z rate.
- *        The gyro bias is averaged over the first GYRO_BIAS_INIT_SAMPLES stationary
- *        samples after boot (encoder heading is used until then) and tracked slowly
- *        whenever the wheels are stopped. vx/wz are also used to detect "stopped".
+ * @brief Gyrodometry: translation from encoders, heading from bias-corrected gyro z
  * 
  * @param vx Forward velocity in m/s
  * @param vy Lateral velocity in m/s (always 0 for diff drive)
@@ -56,10 +58,10 @@ void mbot_calculate_odometry(float vx, float vy, float wz, float dt, float* x, f
  */
 void mbot_calculate_gyrodometry(float vx, float vy, float wz, float dt, float gyro_z, float* x, float* y, float* theta);
 
-/** @brief Current gyro z bias estimate [rad/s] (for diagnostics) */
+/** @brief Gyro z bias estimate [rad/s] */
 float mbot_gyrodometry_get_bias(void);
 
-/** @brief True once the initial bias estimate has been collected */
+/** @brief True once the initial bias is set */
 bool mbot_gyrodometry_bias_ready(void);
 
 #ifdef __cplusplus

@@ -20,10 +20,11 @@ void mbot_calculate_odometry(float vx, float vy, float wz, float dt, float* x, f
     normalize_theta(theta);
 }
 
-/* ---- Gyro bias estimation state (persists across odometry resets on purpose) ---- */
-static float gyro_bias        = 0.0f;   // estimated gyro z bias [rad/s]
-static float gyro_bias_sum    = 0.0f;   // accumulator for the initial estimate
-static int   gyro_bias_samples = 0;     // stationary samples collected so far
+/* gyro bias state (kept across odometry resets) */
+static float gyro_bias         = 0.0f;   // [rad/s]
+static float gyro_bias_sum     = 0.0f;   // initial-bias sum
+static int   gyro_bias_samples = 0;      // initial-bias count
+static int   still_steps       = 0;      // consecutive stopped steps
 
 float mbot_gyrodometry_get_bias(void) {
     return gyro_bias;
@@ -34,18 +35,19 @@ bool mbot_gyrodometry_bias_ready(void) {
 }
 
 void mbot_calculate_gyrodometry(float vx, float vy, float wz, float dt, float gyro_z, float* x, float* y, float* theta) {
-    // Translation comes from the encoders (same as wheel odometry), rotated by the current heading
+    // translation from encoders
     *x += vx * dt * cosf(*theta) - vy * dt * sinf(*theta);
     *y += vx * dt * sinf(*theta) + vy * dt * cosf(*theta);
 
-    // Wheels not moving (encoder body velocities at quantization-noise level)
-    bool stationary = (fabsf(vx) < GYRO_STATIONARY_VX) && (fabsf(wz) < GYRO_STATIONARY_WZ);
+    // require a sustained stop: wz also crosses 0 mid-turn on direction reversals
+    bool wheels_stopped = (fabsf(vx) < GYRO_STATIONARY_VX) && (fabsf(wz) < GYRO_STATIONARY_WZ);
+    still_steps = wheels_stopped ? (still_steps + 1) : 0;
+    bool settled = still_steps >= GYRO_BIAS_SETTLE_STEPS;
 
     float dtheta;
     if (gyro_bias_samples < GYRO_BIAS_INIT_SAMPLES) {
-        // Initial bias estimate: average the gyro while the robot sits still after boot.
-        // Until it is ready, fall back to the encoder heading so /odom keeps working.
-        if (stationary) {
+        // initial bias: average while still; encoder heading until ready
+        if (settled && fabsf(gyro_z) < GYRO_BIAS_MAX_RATE) {
             gyro_bias_sum += gyro_z;
             gyro_bias_samples++;
             if (gyro_bias_samples == GYRO_BIAS_INIT_SAMPLES) {
@@ -54,13 +56,14 @@ void mbot_calculate_gyrodometry(float vx, float vy, float wz, float dt, float gy
         }
         dtheta = wz * dt;
     } else {
-        // Track slow bias changes (temperature) whenever the wheels are stopped
-        if (stationary) {
-            gyro_bias += GYRO_BIAS_ALPHA * (gyro_z - gyro_bias);
-        }
         float rate = gyro_z - gyro_bias;
-        // Standing still and the corrected rate is within noise: hold heading (no random walk)
-        if (stationary && fabsf(rate) < GYRO_STILL_RATE) {
+        // track bias only when truly at rest
+        if (settled && fabsf(rate) < GYRO_BIAS_MAX_RATE) {
+            gyro_bias += GYRO_BIAS_ALPHA * (gyro_z - gyro_bias);
+            rate = gyro_z - gyro_bias;
+        }
+        // hold heading at rest
+        if (settled && fabsf(rate) < GYRO_STILL_RATE) {
             rate = 0.0f;
         }
         dtheta = rate * dt;
