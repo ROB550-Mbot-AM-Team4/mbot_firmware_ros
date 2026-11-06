@@ -106,20 +106,26 @@ fig.text(0.0, -0.06, "Same gyro samples: host integration was right, firmware wa
 save(fig, "fig2_spin_heading_error.png")
 
 # ---------- Fig 3: control loop period ----------
-st = dict(min=10.386, p10=10.443, median=10.475, p90=11.252, max=11.665)
-fig, ax = plt.subplots(figsize=(7.2, 2.2))
-ax.hlines(0, st["min"], st["max"], colors=BLUE, linewidth=2)
-ax.add_patch(plt.Rectangle((st["p10"], -0.18), st["p90"] - st["p10"], 0.36, color=BLUE, alpha=0.35, linewidth=0))
-ax.plot([st["median"]], [0], marker="o", markersize=8, color=BLUE, markeredgecolor=SURFACE, markeredgewidth=2)
+rows = [  # (label, color, stats) from /imu header stamps, single steps only
+    ("Before: add_repeating_timer_ms(10)", ORANGE,
+     dict(min=10.386, p10=10.443, median=10.475, p90=11.252, max=11.665, n=538)),
+    ("After: add_repeating_timer_us(-10000)", BLUE,
+     dict(min=8.826, p10=9.983, median=10.008, p90=10.093, max=11.160, n=543)),
+]
+fig, ax = plt.subplots(figsize=(7.2, 2.8))
+for yi, (lab, col, st) in zip([1, 0], rows):
+    ax.hlines(yi, st["min"], st["max"], colors=col, linewidth=2)
+    ax.add_patch(plt.Rectangle((st["p10"], yi - 0.16), st["p90"] - st["p10"], 0.32, color=col, alpha=0.35, linewidth=0))
+    ax.plot([st["median"]], [yi], marker="o", markersize=8, color=col, markeredgecolor=SURFACE, markeredgewidth=2)
+    ax.annotate(f"{lab}\nmedian {st['median']:.2f} ms ({1000/st['median']:.1f} Hz), p10–p90 {st['p10']:.2f}–{st['p90']:.2f}",
+                (st["max"], yi), xytext=(8, 0), textcoords="offset points", va="center", fontsize=8.5, color=INK2)
 ax.axvline(10.0, color=INK2, linestyle=(0, (4, 2)), linewidth=1.5)
-ax.annotate("nominal 10.00 ms", (10.0, 0.3), ha="left", xytext=(4, 0), textcoords="offset points", fontsize=8.5, color=INK2)
-ax.annotate(f"median {st['median']:.2f} ms (95.5 Hz)", (st["median"], 0), xytext=(0, -28),
-            textcoords="offset points", ha="center", fontsize=8.5, color=INK2)
-ax.annotate(f"p10–p90 {st['p10']:.2f}–{st['p90']:.2f}, max {st['max']:.2f}", (st["p90"], 0.18),
-            xytext=(0, 5), textcoords="offset points", ha="center", fontsize=8.5, color=INK2)
-ax.set_xlim(9.8, 11.9); ax.set_ylim(-0.6, 0.6)
+ax.annotate("nominal 10.00 ms", (10.0, 1.45), xytext=(-5, 0), textcoords="offset points", ha="right", fontsize=8.5, color=INK2)
+ax.set_xlim(8.7, 11.8); ax.set_ylim(-0.5, 1.6)
 ax.set_yticks([]); ax.spines["left"].set_visible(False)
 ax.grid(axis="y", visible=False)
-ax.set_xlabel("Control-loop step [ms] (from /imu header stamps, 538 single steps)")
-ax.set_title("Control loop ran slower than nominal (before fix)")
+ax.set_xlabel("Control-loop step [ms]")
+fig.text(0.0, -0.13, "From /imu header stamps (~540 single steps each). Dot = median, box = p10–p90, line = min–max.",
+         fontsize=8.5, color=INK2)
+ax.set_title("Control-loop period before and after the timer fix")
 save(fig, "fig3_loop_period.png")
