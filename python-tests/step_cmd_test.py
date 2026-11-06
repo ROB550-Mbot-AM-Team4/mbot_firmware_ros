@@ -8,6 +8,25 @@ def main():
     node = Node('simple_step_cmd')
     pub = node.create_publisher(Twist, '/cmd_vel', 10)
 
+    # Messages sent before DDS matches the firmware subscriber are dropped
+    # (the first 1-3 s of the first command), so wait for the match first.
+    def firmware_matched():
+        subs = node.get_subscriptions_info_by_topic('/cmd_vel')
+        return pub.get_subscription_count() > 0 and any(
+            s.node_name == 'mbot_control_node' for s in subs)
+
+    print("Waiting for mbot_control_node to subscribe to /cmd_vel...")
+    t0 = time.time()
+    while not firmware_matched():
+        if time.time() - t0 > 10.0:
+            print("Timed out: is the micro-ROS agent running?")
+            node.destroy_node()
+            rclpy.shutdown()
+            return
+        time.sleep(0.05)
+    time.sleep(0.2)
+    print(f"Matched after {time.time() - t0:.2f} s")
+
     def move(linear_x, angular_z, duration):
         msg = Twist()
         msg.linear.x = float(linear_x)
@@ -23,7 +42,7 @@ def main():
     move(0.0, 0.0, 0.0)
     
     # 1. Drive forward 0.5 m/s for 4s
-    move(0.3, 0.0, 4.0)
+    move(0.5, 0.0, 4.0)
     
     # 2. Wait 1s
     move(0.0, 0.0, 1.0)
