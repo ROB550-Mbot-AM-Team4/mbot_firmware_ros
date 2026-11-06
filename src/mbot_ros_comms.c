@@ -7,6 +7,9 @@
 // Define ROS Objects (matching extern declarations in .h)
 rcl_publisher_t imu_publisher;
 rcl_publisher_t odom_publisher;
+#if MBOT_DEBUG_ODOM
+rcl_publisher_t alt_odom_publisher;
+#endif
 rcl_publisher_t motor_vel_publisher;
 rcl_publisher_t tf_publisher;
 rcl_publisher_t encoders_publisher;
@@ -14,6 +17,9 @@ rcl_publisher_t battery_publisher;
 
 sensor_msgs__msg__Imu imu_msg;
 nav_msgs__msg__Odometry odom_msg;
+#if MBOT_DEBUG_ODOM
+nav_msgs__msg__Odometry alt_odom_msg;
+#endif
 mbot_interfaces__msg__MotorVelocity motor_vel_msg;
 tf2_msgs__msg__TFMessage tf_msg;
 mbot_interfaces__msg__Encoders encoders_msg;
@@ -40,12 +46,18 @@ std_srvs__srv__SetBool_Response lidar_power_res;
 static char imu_frame_id_buf[FRAME_ID_CAPACITY];
 static char odom_frame_id_buf[FRAME_ID_CAPACITY];
 static char odom_child_frame_id_buf[FRAME_ID_CAPACITY];
+#if MBOT_DEBUG_ODOM
+static char alt_odom_child_frame_id_buf[FRAME_ID_CAPACITY];
+#endif
 
 int mbot_ros_comms_init_messages(rcl_allocator_t* allocator) {
     // Initialize messages with dynamic fields
     sensor_msgs__msg__Imu__init(&imu_msg);
 
     nav_msgs__msg__Odometry__init(&odom_msg);
+#if MBOT_DEBUG_ODOM
+    nav_msgs__msg__Odometry__init(&alt_odom_msg);
+#endif
     tf2_msgs__msg__TFMessage__init(&tf_msg);
     geometry_msgs__msg__TransformStamped__Sequence__init(&tf_msg.transforms, 1);
 
@@ -77,6 +89,15 @@ int mbot_ros_comms_init_messages(rcl_allocator_t* allocator) {
     snprintf(odom_msg.child_frame_id.data, FRAME_ID_CAPACITY, "base_footprint");
     odom_msg.child_frame_id.size = strlen(odom_msg.child_frame_id.data);
 
+#if MBOT_DEBUG_ODOM
+    // comparison odometry: frame odom, child = topic name
+    alt_odom_msg.header.frame_id = odom_msg.header.frame_id;   // shares the "odom" buffer
+    alt_odom_msg.child_frame_id.data = alt_odom_child_frame_id_buf;
+    alt_odom_msg.child_frame_id.capacity = FRAME_ID_CAPACITY;
+    snprintf(alt_odom_msg.child_frame_id.data, FRAME_ID_CAPACITY, "%s", MBOT_ALT_ODOM_TOPIC);
+    alt_odom_msg.child_frame_id.size = strlen(alt_odom_msg.child_frame_id.data);
+#endif
+
     // Zero all message structs for safe initialization
     memset(&cmd_vel_msg_buffer, 0, sizeof(cmd_vel_msg_buffer));
     memset(&motor_vel_msg, 0, sizeof(motor_vel_msg));
@@ -102,6 +123,16 @@ int mbot_ros_comms_init_publishers(rcl_node_t *node) {
         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
         "odom");
     if (ret != RCL_RET_OK) { printf("[FATAL] Failed to init odom_publisher: %d\n", ret); fflush(stdout); return MBOT_ERROR; }
+
+#if MBOT_DEBUG_ODOM
+    // best-effort avoids the ack wait; needs MTU >= 724 B
+    ret = rclc_publisher_init_best_effort(
+        &alt_odom_publisher,
+        node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
+        MBOT_ALT_ODOM_TOPIC);
+    if (ret != RCL_RET_OK) { printf("[FATAL] Failed to init alt_odom_publisher: %d\n", ret); fflush(stdout); return MBOT_ERROR; }
+#endif
 
     ret = rclc_publisher_init_best_effort(
         &motor_vel_publisher,
@@ -196,9 +227,12 @@ void reset_odometry_callback(const void * req, void * res) {
 
     // Reset odometry in a thread-safe manner
     ENTER_CRITICAL();
-    mbot_state.odom_x = 0.0f;
-    mbot_state.odom_y = 0.0f;
-    mbot_state.odom_theta = 0.0f;
+    mbot_state.wheel_odom_x = 0.0f;
+    mbot_state.wheel_odom_y = 0.0f;
+    mbot_state.wheel_odom_theta = 0.0f;
+    mbot_state.gyro_odom_x = 0.0f;
+    mbot_state.gyro_odom_y = 0.0f;
+    mbot_state.gyro_odom_theta = 0.0f;
     EXIT_CRITICAL();
 
     // Set response
