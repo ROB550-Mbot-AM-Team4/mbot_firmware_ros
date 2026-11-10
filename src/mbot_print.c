@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "mbot_print.h"
+#include "mbot_odometry.h"
 
 void generateTableInt(char* buf, int rows, int cols, const char* title, const char* headings[], int data[rows][cols]) {
     char line[256] = {0};
@@ -94,11 +95,19 @@ void mbot_print_state(const mbot_state_t* state) {
     buf[0] = '\0';
 
     // Odometry
-    float odom_array[1][3] = {{state->odom_x, state->odom_y, state->odom_theta}};
-    generateTableFloat(buf, 1, 3, "ODOMETRY", odom_headings, odom_array);
+    if (state->use_gyro_odom){
+        float odom_array[1][3] = {{state->gyro_odom_x, state->gyro_odom_y, state->gyro_odom_theta}};
+        generateTableFloat(buf, 1, 3, "ODOMETRY", odom_headings, odom_array);   
+    } else {
+        float odom_array[1][3] = {{state->wheel_odom_x, state->wheel_odom_y, state->wheel_odom_theta}};
+        generateTableFloat(buf, 1, 3, "ODOMETRY", odom_headings, odom_array);  
+    }
     printf("\r%s", buf);
     buf[0] = '\0';
+    
 
     generateBottomLine(buf, 3);
     printf("\r%s\n", buf);
+    printf("\r GYRO BIAS: %+.5f rad/s (%s)\n", mbot_gyrodometry_get_bias(),
+           mbot_gyrodometry_bias_ready() ? "ready" : "estimating, keep robot still");
 } 

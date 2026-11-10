@@ -38,6 +38,11 @@ set(COMMON_LIBS
 #=============================================================================
 # Main MBot Classic ROS Executable
 #=============================================================================
+# /odom source: ON = gyrodometry, OFF = wheel odometry
+option(MBOT_USE_GYRO_ODOM "Use gyrodometry (encoders + gyro) for /odom and tf" ON)
+# Also publish the non-selected odometry (/wheel_odom or /gyrodom)
+option(MBOT_DEBUG_ODOM "Publish the non-selected odometry topic for comparison" OFF)
+
 add_executable(mbot_classic_ros
     src/mbot_classic_ros.c
     src/mbot_classic_ros.h
@@ -74,6 +79,18 @@ target_compile_definitions(mbot_classic_ros PRIVATE
     # PICO_STDIO_DEFAULT_CRLF=0
     CFG_TUD_CDC=2
 )
+if(MBOT_USE_GYRO_ODOM)
+    target_compile_definitions(mbot_classic_ros PRIVATE MBOT_USE_GYRO_ODOM=1)
+    message(STATUS "mbot_classic_ros: MBOT_USE_GYRO_ODOM enabled (gyrodometry)")
+else()
+    # header default is 1, so pass 0 explicitly
+    target_compile_definitions(mbot_classic_ros PRIVATE MBOT_USE_GYRO_ODOM=0)
+    message(STATUS "mbot_classic_ros: MBOT_USE_GYRO_ODOM disabled (wheel odometry)")
+endif()
+if(MBOT_DEBUG_ODOM)
+    target_compile_definitions(mbot_classic_ros PRIVATE MBOT_DEBUG_ODOM=1)
+    message(STATUS "mbot_classic_ros: MBOT_DEBUG_ODOM enabled (comparison odom topic)")
+endif()
 
 #=============================================================================
 # Test Programs

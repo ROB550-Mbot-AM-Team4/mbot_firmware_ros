@@ -38,6 +38,7 @@ typedef struct mbot_params_t{
     float left_wheel_vel_pid[4];
     float right_wheel_vel_pid[4];
     int control_mode;
+    int use_gyro_odom;
 } mbot_params_t;
 
 

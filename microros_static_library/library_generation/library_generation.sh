@@ -4,7 +4,7 @@
 set -e
 
 # Set your paths
-export FIRMWARE_PATH="$HOME/mbot_firmware_ros"
+export FIRMWARE_PATH="$HOME/mbot_firmware/mbot_firmware_ros"
 export PICO_SDK_PATH="$HOME/pico-sdk"  
 export UROS_WS="$HOME/microros_ws"
 export MBOT_WS="$HOME/mbot_ws"
